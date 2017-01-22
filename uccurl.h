@@ -264,6 +264,10 @@ public:
 private:
     safe_ptr<detail::share_handle> handle;
 };
+inline void swap(share& a, share& b) noexcept
+{
+    a.swap(b);
+}
 
 //-----------------------------------------------------------------------------
 // curl_slist API
@@ -367,65 +371,65 @@ public:
     }
     form& forms(const std::string& name, const curl_forms* list)
     {
-        return formadd(name, CURLFORM_ARRAY, list);
+        return add(name, CURLFORM_ARRAY, list);
     }
 
     template <typename Str> form& contents(const Str& name, const char* conts)
     {
-        return formadd(name, CURLFORM_PTRCONTENTS, conts);
+        return add(name, CURLFORM_PTRCONTENTS, conts);
     }
     template <typename Str> form& contents(const Str& name, const char* conts, const std::string& contenttype)
     {
-        return formadd(name, CURLFORM_PTRCONTENTS, conts, CURLFORM_CONTENTTYPE, contenttype.c_str());
+        return add(name, CURLFORM_PTRCONTENTS, conts, CURLFORM_CONTENTTYPE, contenttype.c_str());
     }
     template <typename Str, typename Container> form& contents(const Str& name, const Container& conts)
     {
-        return formadd(name, CURLFORM_PTRCONTENTS, conts.data(), CURLFORM_CONTENTSLENGTH, static_cast<long>(conts.size()));
+        return add(name, CURLFORM_PTRCONTENTS, conts.data(), CURLFORM_CONTENTSLENGTH, static_cast<long>(conts.size()));
     }
     template <typename Str, typename Container> form& contents(const Str& name, const Container& conts, const std::string& contenttype)
     {
-        return formadd(name, CURLFORM_PTRCONTENTS, conts.data(), CURLFORM_CONTENTSLENGTH, static_cast<long>(conts.size()),
+        return add(name, CURLFORM_PTRCONTENTS, conts.data(), CURLFORM_CONTENTSLENGTH, static_cast<long>(conts.size()),
                 CURLFORM_CONTENTTYPE, contenttype.c_str());
     }
     template <typename Str, typename Container> form& copy_contents(const Str& name, Container&& conts)
     {
-        return formadd(name, CURLFORM_COPYCONTENTS, conts.data(), CURLFORM_CONTENTSLENGTH, static_cast<long>(conts.size()));
+        return add(name, CURLFORM_COPYCONTENTS, conts.data(), CURLFORM_CONTENTSLENGTH, static_cast<long>(conts.size()));
     }
     template <typename Str, typename Container> form& copy_contents(const Str& name, Container&& conts, const std::string& contenttype)
     {
-        return formadd(name, CURLFORM_COPYCONTENTS, conts.data(), CURLFORM_CONTENTSLENGTH, static_cast<long>(conts.size()),
+        return add(name, CURLFORM_COPYCONTENTS, conts.data(), CURLFORM_CONTENTSLENGTH, static_cast<long>(conts.size()),
                 CURLFORM_CONTENTTYPE, contenttype.c_str());
     }
 
     form& file(const std::string& name, const std::string& filename)
     {
-        return formadd(name, CURLFORM_FILE, filename.c_str());
+        return add(name, CURLFORM_FILE, filename.c_str());
     }
     form& file(const std::string& name, const std::string& filename, const std::string& contenttype)
     {
-        return formadd(name, CURLFORM_FILE, filename.c_str(), CURLFORM_CONTENTTYPE, contenttype.c_str());
+        return add(name, CURLFORM_FILE, filename.c_str(), CURLFORM_CONTENTTYPE, contenttype.c_str());
     }
 
     template <typename Container> form& buffer(const std::string& name, const std::string& filename, const Container& data)
     {
-        return formadd(name, CURLFORM_BUFFER, filename.c_str(), CURLFORM_BUFFERPTR, data.data(), 
+        return add(name, CURLFORM_BUFFER, filename.c_str(), CURLFORM_BUFFERPTR, data.data(), 
                 CURLFORM_BUFFERLENGTH, static_cast<long>(data.size()));
     }
     template < typename Container > form& buffer(const std::string& name, const std::string& filename, const Container& data, const std::string& contenttype)
     {
-        return formadd(name, CURLFORM_BUFFER, filename.c_str(), CURLFORM_BUFFERPTR, data.data(), 
+        return add(name, CURLFORM_BUFFER, filename.c_str(), CURLFORM_BUFFERPTR, data.data(), 
                 CURLFORM_BUFFERLENGTH, static_cast<long>(data.size()), CURLFORM_CONTENTTYPE, contenttype.c_str());
     }
 
-    template < typename... Args > form& formadd(const char* name, CURLformoption option, Args&&... args)
+    template < typename... Args > form& add(const char* name, CURLformoption option, Args&&... args)
     {
-        return formadd(CURLFORM_COPYNAME, name, option, std::forward<Args>(args)...);
+        return add(CURLFORM_COPYNAME, name, option, std::forward<Args>(args)...);
     }
-    template < typename... Args > form& formadd(const std::string& name, CURLformoption option, Args&&... args)
+    template < typename... Args > form& add(const std::string& name, CURLformoption option, Args&&... args)
     {
-        return formadd(CURLFORM_COPYNAME, name.c_str(), CURLFORM_NAMELENGTH, name.size(), option, std::forward<Args>(args)...);
+        return add(CURLFORM_COPYNAME, name.c_str(), CURLFORM_NAMELENGTH, name.size(), option, std::forward<Args>(args)...);
     }
-    template < typename... Args > form& formadd(CURLformoption option, Args... args)
+    template < typename... Args > form& add(CURLformoption option, Args... args)
     {
         auto f = first.get();
         UC_CURL_ASSERT_CURLFORMCODE(::curl_formadd(&f, &last, option, args..., CURLFORM_END));
@@ -864,6 +868,10 @@ template <typename T, typename U> bool operator!=(const basic_easy<T>& a, const 
 {
     return !operator==(a, b);
 }
+template <typename T> void swap(basic_easy<T>& a, basic_easy<T>& b) noexcept
+{
+    a.swap(b);
+}
 
 
 namespace detail
@@ -1131,7 +1139,10 @@ template<> inline multi_ref::basic_multi(CURLM* h) : handle(static_cast<detail::
 {
     UC_CURL_ASSERT(handle, "handle == null.");
 }
-
+template <typename T> void swap(basic_multi<T>& a, basic_multi<T>& b) noexcept
+{
+    a.swap(b);
+}
 }
 }
 #endif
