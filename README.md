@@ -3,10 +3,10 @@
 uc::curl is a libcurl wrapper library created C++11 single-header.
 It depends only on libcurl and STL.
 
-```cpp
+```cpp:sample.cpp
 #include <iostream>
 #include <string>
-#include "curlcpp.h"
+#include "uccurl.h"
 
 int main()
 {
@@ -27,7 +27,7 @@ int main()
 
 build
 ```bash
-$ g++ simple.cpp -std=c++11 -lcurl
+$ g++ sample.cpp -std=c++11 -lcurl
 ```
 
 ## License
@@ -43,7 +43,7 @@ MIT-Lisence
 ```cpp
 // See https://curl.haxx.se/libcurl/c/simple.html
 #include <iostream>
-#include "curlcpp.h"
+#include "uccurl.h"
 
 int main()
 {
@@ -67,7 +67,7 @@ curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
 curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 20L);
 ```
 
-The value of `CURLOPT_MAXREDIRS` can be specified as the second argument. The default value is 20.
+The value of [`CURLOPT_MAXREDIRS`](https://curl.haxx.se/libcurl/c/CURLOPT_MAXREDIRS.html) can be specified as the second argument. The default value is 20.
 
 * `uc::curl::easy("http://example.com", 0)` will make libcurl refuse any redirect.
 * `uc::curl::easy("http://example.com", -1)`  for an infinite number of redirects.
@@ -102,18 +102,15 @@ Automatically resolve type.
     uc::curl::slist list = curl.getinfo<CURLINFO_COOKIELIST>();
 ```
 
-To get curl_certinfo * please refer here.
-
-
 ### **GET** function
 
 You can use `std::string`, `std::ostream`, `size_t(const char*, size_t)`  for the `operator>>()`.
 
 `operator>>()` performs the following processing in order.
 
-1. Set `CURLOPT_WRITEDATA` and `CURLOPT_WRITEFUNCTION`.
+1. Set [`CURLOPT_WRITEDATA`](https://curl.haxx.se/libcurl/c/CURLOPT_WRITEFUNCTION.html) and [`CURLOPT_WRITEFUNCTION`](https://curl.haxx.se/libcurl/c/CURLOPT_WRITEDATA.html).
 1. Call `uc::curl::perform()`.
-1. Clear `CURLOPT_WRITEDATA` and `CURLOPT_WRITEFUNCTION`.
+1. Clear  [`CURLOPT_WRITEDATA`](https://curl.haxx.se/libcurl/c/CURLOPT_WRITEFUNCTION.html) and [`CURLOPT_WRITEFUNCTION`](https://curl.haxx.se/libcurl/c/CURLOPT_WRITEDATA.html).
 
 
 ```cpp
@@ -153,7 +150,7 @@ You can use `std::string`, `std::ostream`, `size_t(const char*, size_t)`  for th
     uc::curl::form formpost;
     formpost
         .file("sendfile", "postit2.c")
-        .file("filename", "postit2.c")
+        .contents("filename", "postit2.c")
         .contents("submit", "send");
 
     uc::curl::easy("http://example.com/").postfields(formpost).perform();
@@ -191,26 +188,22 @@ You can use `std::string`, `std::ostream`, `size_t(const char*, size_t)`  for th
 
 set sample
 ```cpp
-// See https://curl.haxx.se/libcurl/c/httpcustomheader.html
-void httpcustomheader(const std::string& url)
-{
-    auto chunk = uc::curl::create_slist("Accept:", "Another: yes", "Host: example.com", "X-silly-header;"); 
+    auto chunk = uc::curl::create_slist(
+        "Accept:", 
+        "Another: yes", 
+        "Host: example.com", 
+        "X-silly-header;"); 
     uc::curl::easy(url).header(chunk).perform();
-}
 ```
 
 get sample
 ```cpp
-// See https://curl.haxx.se/libcurl/c/cookie_interface.html
-void print_cookies(const uc::curl::easy& curl)
-{
     uc::curl::slist list = curl.getinfo<CURLINFO_COOKIELIST>();
 
     // e : const char*
-    for (auto&& nc : list) {
-        std::cout << nc << "\n";
+    for (auto&& e : list) {
+        std::cout << e << "\n";
     }
-}
 ```
 
 ## MULTI interface
@@ -221,7 +214,7 @@ void print_cookies(const uc::curl::easy& curl)
 
 ```cpp
 #include <iostream>
-#include "curlcpp.h"
+#include "uccurl.h"
 
 #ifdef _WIN32
 #define WAITMS(x) Sleep(x)
@@ -261,10 +254,10 @@ int main()
 ```c++
     // See https://curl.haxx.se/libcurl/c/multi-app.html
     uc::curl::fdsets sets;
+    
     while (multi_handle.perform() > 0) {
-        auto timeout = std::min(multi_handle.timeout_ms(), 1000L);
-
         multi_handle.fdset(sets);
+        auto timeout = std::min(multi_handle.timeout_ms(), 1000L);
         if (!sets) {
             WAITMS(1000);
         } else if (sets.select(timeout) == -1) {
@@ -290,8 +283,8 @@ while ((msg = curl_multi_info_read(multi_handle, &msgs_left))) {
 }
 
 // after
-multi_handle.for_each_done_info([&](uc::curl::easy_ref&& h, CURLcode result) {
-        std::cout << result <<  " : " << h.uri() << "\n";
+multi_handle.for_each_done_info([](uc::curl::easy_ref&& h, CURLcode result) {
+    std::cout << result <<  " : " << h.uri() << "\n";
 });
 ```
 
