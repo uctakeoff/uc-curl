@@ -1096,23 +1096,29 @@ public:
     // func : void (easy_ref&&, CURLMSG, CURLcode)
     template <typename F> void for_each_info(F func)
     {
-        for (auto msg = info_read(); msg; msg = info_read()) {
+        int msgs_in_queue = 0;
+        for (auto msg = info_read(&msgs_in_queue); msg; msg = info_read(&msgs_in_queue)) {
             func(easy_ref(msg->easy_handle), msg->msg, msg->data.result);
         }
     }
     // func : void (easy_ref&&, CURLcode)
     template <typename F> void for_each_done_info(F func)
     {
-        for (auto msg = info_read(); msg; msg = info_read()) {
+        int msgs_in_queue = 0;
+        for (auto msg = info_read(&msgs_in_queue); msg; msg = info_read(&msgs_in_queue)) {
             if (msg->msg == CURLMSG_DONE) {
                 func(easy_ref(msg->easy_handle), msg->data.result);
             }
         }
     }
-    const CURLMsg* info_read(int* msgs_in_queue = nullptr) noexcept
+    const CURLMsg* info_read() noexcept
     {
         int dummy = 0;
-        return curl_multi_info_read(native_handle(), msgs_in_queue ? msgs_in_queue : &dummy);
+        return curl_multi_info_read(native_handle(), &dummy);
+    }
+    const CURLMsg* info_read(int* msgs_in_queue) noexcept
+    {
+        return curl_multi_info_read(native_handle(), msgs_in_queue);
     }
 private:
     handle_type handle;
