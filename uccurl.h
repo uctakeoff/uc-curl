@@ -1,5 +1,3 @@
-#ifndef UC_CURL_EASY_H
-#define UC_CURL_EASY_H
 /**
 uc::curl 
 
@@ -8,6 +6,10 @@ Copyright (c) 2017, Kentaro Ushiyama
 This software is released under the MIT License.
 http://opensource.org/licenses/mit-license.php
 */
+#ifndef UC_CURL_H
+#define UC_CURL_H
+#define UC_CURL_VERSION "0.1.0"
+#define UC_CURL_VERSION_NUM 0x000100
 
 #include <iostream>
 #include <memory>
