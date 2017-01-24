@@ -8,8 +8,8 @@ http://opensource.org/licenses/mit-license.php
 */
 #ifndef UC_CURL_H
 #define UC_CURL_H
-#define UC_CURL_VERSION "0.1.0"
-#define UC_CURL_VERSION_NUM 0x000100
+#define UC_CURL_VERSION "0.1.1"
+#define UC_CURL_VERSION_NUM 0x000101
 
 #include <iostream>
 #include <memory>
