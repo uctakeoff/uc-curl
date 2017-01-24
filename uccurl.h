@@ -122,11 +122,11 @@ inline time_t getdate(const std::string& p, const time_t* unused = nullptr) noex
 }
 inline std::string escape(const std::string& str)
 {
-    return std::string(safe_ptr<char>(curl_escape(str.c_str(), str.size())).get());
+    return std::string(safe_ptr<char>(curl_escape(str.c_str(), static_cast<int>(str.size()))).get());
 }
 inline std::string unescape(const std::string& str)
 {
-    return std::string(safe_ptr<char>(curl_unescape(str.c_str(), str.size())).get());
+    return std::string(safe_ptr<char>(curl_unescape(str.c_str(), static_cast<int>(str.size()))).get());
 }
 
 //-----------------------------------------------------------------------------
@@ -922,7 +922,7 @@ template <typename T, typename R, typename P> constexpr T to_msec(const std::chr
 {
     return static_cast<T>(std::chrono::duration_cast<std::chrono::milliseconds>(du).count());
 }
-constexpr timeval msec_to_timeval(long msec)
+constexpr timeval msec_to_timeval(time_t msec)
 {
     return timeval {
         static_cast<decltype(timeval::tv_sec)>(msec / 1000), 
