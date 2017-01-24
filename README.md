@@ -277,7 +277,7 @@ Instead of `curl_multi_info_read()`, there are `for_each_done_info()`.
 while ((msg = curl_multi_info_read(multi_handle, &msgs_left))) {
     if (msg->msg == CURLMSG_DONE) {
         char *url;
-        curl_easy_getinfo(msg->easy_handle, CURLOPT_URL, &url);
+        curl_easy_getinfo(msg->easy_handle, CURLINFO_EFFECTIVE_URL, &url);
         printf("%d : %s\n", msg->data.result, url);
     }
 }
