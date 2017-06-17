@@ -11,17 +11,9 @@ http://opensource.org/licenses/mit-license.php
 #include <iostream>
 #include <stdexcept>
 #include <vector>
+#include <chrono>
+#include <thread>
 #include "../uccurl.h"
-
-#ifdef _WIN32
-#define WAITMS(x) Sleep(x)
-#else
-/* Portable sleep for platforms other than Windows. */ 
-#define WAITMS(x) {                             \
-  struct timeval wait = uc::curl::msec_to_timeval(x);      \
-  (void)select(0, NULL, NULL, NULL, &wait);     \
-}
-#endif
 
 int main()
 {
@@ -41,9 +33,9 @@ int main()
         uc::curl::fdsets sets;
         while (multi_handle.perform() > 0) {
             multi_handle.fdset(sets);
-            auto timeout = std::min(multi_handle.timeout_ms(), 1000L);
+            auto timeout = std::min(multi_handle.timeout(), std::chrono::milliseconds(1000));
             if (!sets) {
-                WAITMS(1000);
+                std::this_thread::sleep_for(std::chrono::seconds(1));
             } else if (sets.select(timeout) == -1) {
                 break;
             }

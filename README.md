@@ -106,13 +106,6 @@ Automatically resolve type.
 
 You can use `std::string`, `std::ostream`, `size_t(const char*, size_t)`  for the `operator>>()`.
 
-`operator>>()` performs the following processing in order.
-
-1. Set [`CURLOPT_WRITEDATA`](https://curl.haxx.se/libcurl/c/CURLOPT_WRITEFUNCTION.html) and [`CURLOPT_WRITEFUNCTION`](https://curl.haxx.se/libcurl/c/CURLOPT_WRITEDATA.html).
-1. Call `uc::curl::perform()`.
-1. Clear  [`CURLOPT_WRITEDATA`](https://curl.haxx.se/libcurl/c/CURLOPT_WRITEFUNCTION.html) and [`CURLOPT_WRITEFUNCTION`](https://curl.haxx.se/libcurl/c/CURLOPT_WRITEDATA.html).
-
-
 ```cpp
     uc::curl::easy curl("http://example.com");
 
@@ -134,27 +127,41 @@ You can use `std::string`, `std::ostream`, `size_t(const char*, size_t)`  for th
         };
 ```
 
+`operator>>()` performs the following processing in order.
+
+1. Set [`CURLOPT_WRITEDATA`](https://curl.haxx.se/libcurl/c/CURLOPT_WRITEFUNCTION.html) and [`CURLOPT_WRITEFUNCTION`](https://curl.haxx.se/libcurl/c/CURLOPT_WRITEDATA.html).
+1. Call `uc::curl::easy::perform()`.
+1. Clear  [`CURLOPT_WRITEDATA`](https://curl.haxx.se/libcurl/c/CURLOPT_WRITEFUNCTION.html) and [`CURLOPT_WRITEFUNCTION`](https://curl.haxx.se/libcurl/c/CURLOPT_WRITEDATA.html).
+
+
 ### **POST** function
 
 [simplepost.c](https://curl.haxx.se/libcurl/c/simplepost.html) above is roughly rewritten as follows.
 
 ```cpp
+    // POST string
     uc::curl::easy("http://example.com").postfields("moo mooo moo moo").perform();
 ```
 
-`postfields()` can take `std::string`, `std::ostream`, `uc::curl::form` as arguments.
-
-`uc::curl::form` is a `struct curl_httppost` wrapper using `std::unique_ptr`.
+`postfields()` can take `std::string`, `std::istream`, `uc::curl::form` as arguments.
 
 ```cpp
+    uc::curl::easy curl("http://example.com/")
+
+    // POST file
+    std::ifstream is("formdata.txt", std::ios::in | std::ios::binary);
+    curl.postfields(is).perform();
+
+    // POST form data
     uc::curl::form formpost;
     formpost
         .file("sendfile", "postit2.c")
         .contents("filename", "postit2.c")
-        .contents("submit", "send");
-
-    uc::curl::easy("http://example.com/").postfields(formpost).perform();
+        .contents("submit", "send");    
+    curl.postfields(formpost).perform();
 ```
+
+`uc::curl::form` is a `struct curl_httppost` wrapper using `std::unique_ptr`.
 
 ### **PUT** function
 
@@ -214,17 +221,10 @@ get sample
 
 ```cpp
 #include <iostream>
+#include <stdexcept>
+#include <chrono>
+#include <thread>
 #include "uccurl.h"
-
-#ifdef _WIN32
-#define WAITMS(x) Sleep(x)
-#else
-/* Portable sleep for platforms other than Windows. */ 
-#define WAITMS(x) {                             \
-  struct timeval wait = uc::curl::msec_to_timeval(x);      \
-  (void)select(0, NULL, NULL, NULL, &wait);     \
-}
-#endif
 
 int main()
 {
@@ -237,8 +237,8 @@ int main()
         multi_handle.add(http_handle);
 
         while (multi_handle.perform() > 0) {
-            if (multi_handle.wait(1000) == 0) {
-                WAITMS(100);
+            if (multi_handle.wait(std::chrono::seconds(1)) == 0) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
             }
         }
     } catch (std::exception& ex) {
@@ -257,9 +257,9 @@ int main()
     
     while (multi_handle.perform() > 0) {
         multi_handle.fdset(sets);
-        auto timeout = std::min(multi_handle.timeout_ms(), 1000L);
+        auto timeout = std::min(multi_handle.timeout(), std::chrono::milliseconds(1000));
         if (!sets) {
-            WAITMS(1000);
+            std::this_thread::sleep_for(std::chrono::seconds(1));
         } else if (sets.select(timeout) == -1) {
             break;
         }
