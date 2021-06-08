@@ -13,6 +13,7 @@ http://opensource.org/licenses/mit-license.php
 #include <vector>
 #include <chrono>
 #include <thread>
+#include <algorithm>
 #include "../uccurl.h"
 
 int main()
@@ -52,9 +53,5 @@ int main()
         return 1;
     }
     return 0;
-}
-void multi_app()
-{
-
 }
 

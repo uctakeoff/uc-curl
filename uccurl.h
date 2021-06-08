@@ -1,20 +1,21 @@
 /**
 uc::curl 
 
-Copyright (c) 2017, Kentaro Ushiyama
+Copyright (c) 2017-2021, Kentaro Ushiyama
 
 This software is released under the MIT License.
 http://opensource.org/licenses/mit-license.php
 */
 #ifndef UC_CURL_H
 #define UC_CURL_H
-#define UC_CURL_VERSION "0.1.1"
-#define UC_CURL_VERSION_NUM 0x000101
+#define UC_CURL_VERSION "0.2.0"
+#define UC_CURL_VERSION_NUM 0x000200
 
 #include <iostream>
 #include <memory>
 #include <string>
 #include <stdexcept>
+#include <system_error>
 #include <functional>
 #include <chrono>
 #include <curl/curl.h>
@@ -61,19 +62,29 @@ inline const char* strerror(CURLMcode errcode) noexcept {return curl_multi_strer
 inline const char* strerror(CURLSHcode errcode) noexcept {return curl_share_strerror(errcode);}
 inline std::string strerror(CURLFORMcode errcode) {return std::string("CURLFORMcode(").append(std::to_string(errcode)).append(")");}
 
-class exception : public std::runtime_error
+template<typename E> class error_category : public std::error_category
 {
 public:
-    explicit exception(const char* what) : std::runtime_error(what) {}
-    explicit exception(const std::string& what) : std::runtime_error(what) {}
+    static const std::error_category& get_instance() noexcept
+    {
+        static error_category<E> cat;
+        return cat;
+    }
+    const char* name() const noexcept override
+    {
+        return "uc::curl";
+    }
+    std::string message(int ec) const override
+    {
+        return std::string{strerror(static_cast<E>(ec))};
+    }
 };
-// All errors are handled with this macro. If you do not like this error handling, please rewrite this macro.
-#define UC_CURL_ASSERT(cmd, msg)   if (!(cmd)) {throw uc::curl::exception(std::string(msg).append(" : uc::curl::").append(__func__));}
 
-#define UC_CURL_ASSERT_CURLCODE(cmd)     {CURLcode err = (cmd); UC_CURL_ASSERT(err == CURLE_OK, uc::curl::strerror(err));}
-#define UC_CURL_ASSERT_CURLMCODE(cmd)    {CURLMcode err = (cmd); UC_CURL_ASSERT((err == CURLM_OK) || (err == CURLM_CALL_MULTI_PERFORM), uc::curl::strerror(err));}
-#define UC_CURL_ASSERT_CURLSHCODE(cmd)   {CURLSHcode err = (cmd); UC_CURL_ASSERT(err == CURLSHE_OK, uc::curl::strerror(err));}
-#define UC_CURL_ASSERT_CURLFORMCODE(cmd) {CURLFORMcode err = (cmd); UC_CURL_ASSERT(err == CURL_FORMADD_OK, uc::curl::strerror(err));}
+#define UC_CURL_ASSERT(cmd, err) if (!(cmd)) {throw std::system_error{err, error_category<decltype(err)>::get_instance(), std::string{"uc::curl::"}.append(__func__)};}
+#define UC_CURL_ASSERT_CURLCODE(cmd)     {CURLcode err = (cmd); UC_CURL_ASSERT(err == CURLE_OK, err);}
+#define UC_CURL_ASSERT_CURLMCODE(cmd)    {CURLMcode err = (cmd); UC_CURL_ASSERT((err == CURLM_OK) || (err == CURLM_CALL_MULTI_PERFORM), err);}
+#define UC_CURL_ASSERT_CURLSHCODE(cmd)   {CURLSHcode err = (cmd); UC_CURL_ASSERT(err == CURLSHE_OK, err);}
+#define UC_CURL_ASSERT_CURLFORMCODE(cmd) {CURLFORMcode err = (cmd); UC_CURL_ASSERT(err == CURL_FORMADD_OK, err);}
 
 //-----------------------------------------------------------------------------
 // startup , cleanup 
@@ -109,7 +120,7 @@ inline const char* version() noexcept
 inline const curl_version_info_data& version_info(CURLversion type = CURLVERSION_NOW)
 {
     curl_version_info_data* ret = curl_version_info(type);
-    UC_CURL_ASSERT(ret, "failed curl_version_info()");
+    UC_CURL_ASSERT(ret, CURLE_FAILED_INIT);
     return *ret;
 }
 inline time_t getdate(const char* p, const time_t* unused = nullptr) noexcept
@@ -226,7 +237,7 @@ public:
 
     share() : handle(static_cast<detail::share_handle*>(::curl_share_init()))
     {
-        UC_CURL_ASSERT(handle, "curl_share_init() failed.");
+        UC_CURL_ASSERT(handle, CURLE_FAILED_INIT);
     }
     share(const share&) = delete;
     share(share&& obj) noexcept = default;
@@ -688,15 +699,29 @@ public:
         return *this;
     }
 
-    // T : std::string, std::ostream, std::function<size_t>(const char*, size_t)
+    // set response callback.  T : std::string, std::ostream, std::function<size_t>(const char*, size_t)
     template <typename T> basic_easy& response(T& output)
     {
         return setopt(CURLOPT_WRITEDATA, &output).setopt(CURLOPT_WRITEFUNCTION, &detail::write_cb<T>);
     }
-    // T : std::string, std::ostream, std::function<size_t(const char*, size_t)
+    // clear response callback.
+    basic_easy& response()
+    {
+        clear<CURLOPT_WRITEDATA>();
+        clear<CURLOPT_WRITEFUNCTION>();
+        return *this;
+    }
+    // set response header callback.  T : std::string, std::ostream, std::function<size_t(const char*, size_t)
     template <typename T> basic_easy& response_header(T& output)
     {
         return setopt(CURLOPT_WRITEHEADER, &output).setopt(CURLOPT_HEADERFUNCTION, &detail::write_cb<T>);
+    }
+    // clear response header callback.
+    basic_easy& response_header()
+    {
+        clear<CURLOPT_WRITEHEADER>();
+        clear<CURLOPT_HEADERFUNCTION>();
+        return *this;
     }
     
     basic_easy& share(share& curlsh)
@@ -816,13 +841,13 @@ namespace detail
     inline easy::handle_type new_handle()
     {
         auto h = ::curl_easy_init();
-        UC_CURL_ASSERT(h, "curl_easy_init() failed.");
+        UC_CURL_ASSERT(h, CURLE_FAILED_INIT);
         return easy::handle_type(static_cast<detail::easy_handle*>(h));
     }
     inline easy::handle_type dup_handle(const easy::handle_type& handle)
     {
         auto h = ::curl_easy_duphandle(handle.get());
-        UC_CURL_ASSERT(h, "curl_easy_duphandle() failed.");
+        UC_CURL_ASSERT(h, CURLE_FAILED_INIT);
         return easy::handle_type(static_cast<detail::easy_handle*>(h));
     }
 }
@@ -874,41 +899,25 @@ template <typename T> void swap(basic_easy<T>& a, basic_easy<T>& b) noexcept
 }
 
 
-namespace detail
-{
-    template <typename Handle, CURLoption Option, CURLoption... Options> void clear_all(Handle* e)
-    {
-        e->template clear<Option>();
-        clear_all<Handle, Options...>(e);
-    };
-    template <typename Handle> void clear_all(Handle* e)
-    {
-    };
 
-    template<CURLoption... Options> struct performer
-    {
-        template <typename Handle> void operator()(Handle* e) const noexcept
-        {
-            e->perform();
-            clear_all<Handle, Options...>(e);
-        }
-    };
-    template <typename H, CURLoption... O> using easy_auto_perform = std::unique_ptr<H, performer<O...>>;
-    template <typename H, CURLoption... O> using easy_auto_clear = std::unique_ptr<detail::decay_t<H>, performer<CURLOPT_WRITEDATA, CURLOPT_WRITEFUNCTION, O...>>;
 
-    template <typename T, typename H, CURLoption... O>
-    easy_auto_clear<H, O...> operator>>(easy_auto_perform<H, O...>&& handle, T&& obj)
-    {
-        handle->response(obj);
-        return easy_auto_clear<H, O...>(handle.release());
-    }
-}
 
-template <typename T, typename H> 
-detail::easy_auto_perform<detail::decay_t<H>, CURLOPT_WRITEDATA, CURLOPT_WRITEFUNCTION> operator>>(H&& handle, T&& obj)
+template <typename T, typename H> void operator>>(basic_easy<H>& handle, T&& obj)
 {
     handle.response(obj);
-    return detail::easy_auto_perform<detail::decay_t<H>, CURLOPT_WRITEDATA, CURLOPT_WRITEFUNCTION>(&handle);
+    try {
+        handle.perform();
+        handle.response();
+    } catch (...) {
+        handle.response();
+        throw;
+    }
+}
+template <typename T, typename H> void operator>>(basic_easy<H>&& handle, T&& obj)
+{
+    auto h = std::move(handle);
+    h.response(obj);
+    h.perform();
 }
 
 //-----------------------------------------------------------------------------
@@ -1131,13 +1140,13 @@ public:
 private:
     handle_type handle;
 };
-template<> inline multi::basic_multi() : handle(static_cast<detail::multi_handle*>(curl_multi_init()))
+template<> inline multi::basic_multi() : handle{static_cast<detail::multi_handle*>(curl_multi_init())}
 {
-    UC_CURL_ASSERT(handle, "curl_multi_init() failed.");
+    UC_CURL_ASSERT(handle, CURLE_FAILED_INIT);
 }
-template<> inline multi_ref::basic_multi(CURLM* h) : handle(static_cast<detail::multi_handle*>(h))
+template<> inline multi_ref::basic_multi(CURLM* h) : handle{static_cast<detail::multi_handle*>(h)}
 {
-    UC_CURL_ASSERT(handle, "handle == null.");
+    UC_CURL_ASSERT(handle, CURLE_BAD_FUNCTION_ARGUMENT);
 }
 template <typename T> void swap(basic_multi<T>& a, basic_multi<T>& b) noexcept
 {
