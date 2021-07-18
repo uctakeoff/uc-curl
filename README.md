@@ -102,7 +102,7 @@ Automatically resolve type.
     uc::curl::slist list = curl.getinfo<CURLINFO_COOKIELIST>();
 ```
 
-### **GET** function
+### GET method
 
 You can use `std::string`, `std::ostream`, `size_t(const char*, size_t)`  for the `operator>>()`.
 
@@ -134,57 +134,56 @@ You can use `std::string`, `std::ostream`, `size_t(const char*, size_t)`  for th
 1. Clear  [`CURLOPT_WRITEDATA`](https://curl.haxx.se/libcurl/c/CURLOPT_WRITEFUNCTION.html) and [`CURLOPT_WRITEFUNCTION`](https://curl.haxx.se/libcurl/c/CURLOPT_WRITEDATA.html).
 
 
-### **POST** function
+### POST method
 
 [simplepost.c](https://curl.haxx.se/libcurl/c/simplepost.html) above is roughly rewritten as follows.
 
 ```cpp
     // POST string
-    uc::curl::easy("http://example.com").postfields("moo mooo moo moo").perform();
+    uc::curl::easy(url).postfields("moo mooo moo moo").perform();
 ```
 
 `postfields()` can take `std::string`, `std::istream`, `uc::curl::form` as arguments.
 
 ```cpp
-    uc::curl::easy curl("http://example.com/")
-
     // POST file
     std::ifstream is("formdata.txt", std::ios::in | std::ios::binary);
-    curl.postfields(is).perform();
+    uc::curl::easy(url).postfields(is).perform();
+```
 
+```cpp
     // POST form data
     uc::curl::form formpost;
     formpost
         .file("sendfile", "postit2.c")
         .contents("filename", "postit2.c")
         .contents("submit", "send");    
-    curl.postfields(formpost).perform();
+    uc::curl::easy(url).postfields(formpost).perform();
 ```
 
 `uc::curl::form` is a `struct curl_httppost` wrapper using `std::unique_ptr`.
 
-### **PUT** function
+### PUT method
 
 ```cpp
     std::ifstream is(filename, std::ios::in | std::ios::binary);
     uc::curl::easy(uri).setopt<CURLOPT_UPLOAD>().body(is).perform();
 ```
 
-### other function
+### HEAD method
 
 ```cpp
-    std::string url;
-
-    // HEAD
     // You can use `std::string`, `std::ostream`, `size_t(const char*, size_t)`  for the `response_header()`.
     auto resheader = [](const char* ptr, size_t size) {
         std::cout << "###" << std::string(ptr, size);
         return size;
     };
     uc::curl::easy(url).setopt<CURLOPT_NOBODY>().response_header(resheader).perform();
-        
+```
 
-    // DELETE
+### DELETE method
+
+```cpp
     uc::curl::easy(url).setopt<CURLOPT_CUSTOMREQUEST>("DELETE").perform();
 ```
 
@@ -251,8 +250,8 @@ int main()
 
 ### With `select()`
 
+See https://curl.haxx.se/libcurl/c/multi-app.html
 ```c++
-    // See https://curl.haxx.se/libcurl/c/multi-app.html
     uc::curl::fdsets sets;
     
     while (multi_handle.perform() > 0) {
@@ -271,9 +270,8 @@ int main()
 
 Instead of `curl_multi_info_read()`, there are `for_each_done_info()`.
 
-
+before
 ```cpp
-// before
 while ((msg = curl_multi_info_read(multi_handle, &msgs_left))) {
     if (msg->msg == CURLMSG_DONE) {
         char *url;
@@ -281,8 +279,9 @@ while ((msg = curl_multi_info_read(multi_handle, &msgs_left))) {
         printf("%d : %s\n", msg->data.result, url);
     }
 }
-
-// after
+```
+after
+```
 multi_handle.for_each_done_info([](uc::curl::easy_ref&& h, CURLcode result) {
     std::cout << result <<  " : " << h.uri() << "\n";
 });
