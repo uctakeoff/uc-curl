@@ -31,8 +31,16 @@ int main()
             multi_handle.add(e);
         }
 
+        uc::curl::fdsets sets;
         while (multi_handle.perform() > 0) {
-            multi_handle.poll(std::chrono::seconds{1});
+            multi_handle.fdset(sets);
+            auto timeout = std::min(multi_handle.timeout(), std::chrono::milliseconds(1000));
+            if (!sets) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            } else if (sets.select(timeout) == -1) {
+                break;
+            }
+            sets.zero();
         }
             
         multi_handle.for_each_done_info([&](uc::curl::easy_ref&& h, CURLcode result) {

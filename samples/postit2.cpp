@@ -10,6 +10,7 @@ http://opensource.org/licenses/mit-license.php
 // See https://curl.haxx.se/libcurl/c/postit2.html
 #include <iostream>
 #include <stdexcept>
+#include <string>
 #include "../uccurl.h"
 
 int main(int argc, char *argv[])
@@ -24,7 +25,7 @@ int main(int argc, char *argv[])
         uc::curl::slist headerlist = uc::curl::create_slist("Expect:");
 
         uc::curl::easy curl("http://example.com/examplepost.cgi");
-        if ((argc == 2) && (!strcmp(argv[1], "noexpectheader"))) {
+        if ((argc == 2) && (std::string{"noexpectheader"} != argv[1])) {
             curl.header(headerlist);
         }
         curl.postfields(formpost).perform();

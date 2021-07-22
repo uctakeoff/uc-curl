@@ -8,8 +8,8 @@ http://opensource.org/licenses/mit-license.php
 */
 #ifndef UC_CURL_H
 #define UC_CURL_H
-#define UC_CURL_VERSION "0.2.0"
-#define UC_CURL_VERSION_NUM 0x000200
+#define UC_CURL_VERSION "0.3.0"
+#define UC_CURL_VERSION_NUM 0x000300
 
 #include <iostream>
 #include <memory>
@@ -51,6 +51,18 @@ namespace detail
             traits<T>::cleanup(handle);
         }
     };
+ 
+#if __cpp_lib_nonmember_container_access >= 201411
+    template <typename C> constexpr auto data(C&& c) { return std::data(c); }
+    template <typename T, typename C, decltype(std::declval<C>().size()) = 0> constexpr T size(const C& c) { return static_cast<T>(std::size(c)); }
+#else
+    template <typename C> constexpr auto data(C& c) -> decltype(c.data()) { return c.data(); }
+    template <typename C> constexpr auto data(const C& c) -> decltype(c.data()) { return c.data(); }
+    template <typename A, std::size_t N> constexpr A* data(A (&array)[N]) noexcept { return array; }
+    template <typename E> constexpr const E* data(std::initializer_list<E> il) noexcept { return il.begin(); }
+    template <typename T, typename C, decltype(std::declval<C>().size()) = 0> constexpr T size(const C& c) { return static_cast<T>(c.size()); }
+    template <typename T, typename A, std::size_t N> constexpr T size(const A (&array)[N]) noexcept { return static_cast<T>(N); }
+#endif
 }
 template <typename T> using safe_ptr = std::unique_ptr<T, detail::deleter<T>>;
 
@@ -395,20 +407,20 @@ public:
     }
     template <typename Str, typename Container> form& contents(const Str& name, const Container& conts)
     {
-        return add(name, CURLFORM_PTRCONTENTS, conts.data(), CURLFORM_CONTENTSLENGTH, static_cast<long>(conts.size()));
+        return add(name, CURLFORM_PTRCONTENTS, detail::data(conts), CURLFORM_CONTENTSLENGTH, detail::size<long>(conts));
     }
     template <typename Str, typename Container> form& contents(const Str& name, const Container& conts, const std::string& contenttype)
     {
-        return add(name, CURLFORM_PTRCONTENTS, conts.data(), CURLFORM_CONTENTSLENGTH, static_cast<long>(conts.size()),
+        return add(name, CURLFORM_PTRCONTENTS, detail::data(conts), CURLFORM_CONTENTSLENGTH, detail::size<long>(conts),
                 CURLFORM_CONTENTTYPE, contenttype.c_str());
     }
     template <typename Str, typename Container> form& copy_contents(const Str& name, Container&& conts)
     {
-        return add(name, CURLFORM_COPYCONTENTS, conts.data(), CURLFORM_CONTENTSLENGTH, static_cast<long>(conts.size()));
+        return add(name, CURLFORM_COPYCONTENTS, detail::data(conts), CURLFORM_CONTENTSLENGTH, detail::size<long>(conts));
     }
     template <typename Str, typename Container> form& copy_contents(const Str& name, Container&& conts, const std::string& contenttype)
     {
-        return add(name, CURLFORM_COPYCONTENTS, conts.data(), CURLFORM_CONTENTSLENGTH, static_cast<long>(conts.size()),
+        return add(name, CURLFORM_COPYCONTENTS, detail::data(conts), CURLFORM_CONTENTSLENGTH, detail::size<long>(conts),
                 CURLFORM_CONTENTTYPE, contenttype.c_str());
     }
 
@@ -423,13 +435,13 @@ public:
 
     template <typename Container> form& buffer(const std::string& name, const std::string& filename, const Container& data)
     {
-        return add(name, CURLFORM_BUFFER, filename.c_str(), CURLFORM_BUFFERPTR, data.data(), 
-                CURLFORM_BUFFERLENGTH, static_cast<long>(data.size()));
+        return add(name, CURLFORM_BUFFER, filename.c_str(), CURLFORM_BUFFERPTR, detail::data(data), 
+                CURLFORM_BUFFERLENGTH, detail::size<long>(data));
     }
     template < typename Container > form& buffer(const std::string& name, const std::string& filename, const Container& data, const std::string& contenttype)
     {
-        return add(name, CURLFORM_BUFFER, filename.c_str(), CURLFORM_BUFFERPTR, data.data(), 
-                CURLFORM_BUFFERLENGTH, static_cast<long>(data.size()), CURLFORM_CONTENTTYPE, contenttype.c_str());
+        return add(name, CURLFORM_BUFFER, filename.c_str(), CURLFORM_BUFFERPTR, detail::data(data), 
+                CURLFORM_BUFFERLENGTH, detail::size<long>(data), CURLFORM_CONTENTTYPE, contenttype.c_str());
     }
 
     template < typename... Args > form& add(const char* name, CURLformoption option, Args&&... args)
@@ -802,7 +814,7 @@ public:
     std::string escape(const std::string& str) const
     {
         auto s = escape(str.c_str(), str.size());
-        return s ? std::string(s.get()) : std::string();
+        return s ? std::string{s.get()} : std::string{};
     }
     safe_ptr<char> unescape(const char* str, int len = 0, int* outputlen = nullptr) const
     {
@@ -812,7 +824,7 @@ public:
     {
         int outputlen = 0;
         auto s = unescape(str.c_str(), str.size(), &outputlen);
-        return s ? std::string(s.get(), outputlen) : std::string();
+        return s ? std::string{s.get(), outputlen} : std::string{};
     }
 
     curl_socket_t get_socket() const
@@ -1089,23 +1101,46 @@ public:
         return std::chrono::milliseconds(timeout_ms());
     }
 
-    // timeout : int msec or chrono::duration
+    void wakeup()
+    {
+        UC_CURL_ASSERT_CURLMCODE(curl_multi_wakeup(native_handle()));
+    }
+
+    // timeout : milliseconds(int) or std::chrono::duration
+    template <typename T> int poll(const T& timeout)
+    {
+        return poll(nullptr, 0, timeout);
+    }
+    template <typename Container, typename T> int poll(Container& extra_fds, const T& timeout)
+    {
+        return poll(detail::data(extra_fds), detail::size<unsigned int>(extra_fds), timeout);
+    }
+    template <typename R, typename P> int poll(curl_waitfd extra_fds[], unsigned int extra_nfds, const std::chrono::duration<R, P>& timeout)
+    {
+        return poll(extra_fds, extra_nfds, to_msec<int>(timeout));
+    }
+    int poll(curl_waitfd extra_fds[], unsigned int extra_nfds, int timeout_ms)
+    {
+        int numfds{};
+        UC_CURL_ASSERT_CURLMCODE(curl_multi_poll(native_handle(), extra_fds, extra_nfds, timeout_ms, &numfds));
+        return numfds;
+    }
+
     template <typename T> int wait(const T& timeout)
     {
         return wait(nullptr, 0, timeout);
     }
     template <typename Container, typename T> int wait(Container& extra_fds, const T& timeout)
     {
-        return wait(extra_fds.data(), extra_fds.size(), timeout);
+        return wait(detail::data(extra_fds), detail::size<unsigned int>(extra_fds), timeout);
     }
-    template <typename R, typename P> 
-    int wait(curl_waitfd extra_fds[], unsigned int extra_nfds, const std::chrono::duration<R, P>& timeout)
+    template <typename R, typename P> int wait(curl_waitfd extra_fds[], unsigned int extra_nfds, const std::chrono::duration<R, P>& timeout)
     {
         return wait(extra_fds, extra_nfds, to_msec<int>(timeout));
     }
     int wait(curl_waitfd extra_fds[], unsigned int extra_nfds, int timeout_ms)
     {
-        int numfds = 0;
+        int numfds{};
         UC_CURL_ASSERT_CURLMCODE(curl_multi_wait(native_handle(), extra_fds, extra_nfds, timeout_ms, &numfds));
         return numfds;
     }

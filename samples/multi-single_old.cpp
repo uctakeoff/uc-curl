@@ -25,10 +25,10 @@ int main()
         multi_handle.add(http_handle);
 
         while (multi_handle.perform() > 0) {
-            multi_handle.poll(std::chrono::seconds{1});
+            if (multi_handle.wait(std::chrono::seconds(1)) == 0) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            }
         }
-
-        multi_handle.remove(http_handle);
     } catch (std::exception& ex) {
         std::cerr << "exception : " << ex.what() << std::endl;
         return 1;
