@@ -8,8 +8,8 @@ http://opensource.org/licenses/mit-license.php
 */
 #ifndef UC_CURL_H
 #define UC_CURL_H
-#define UC_CURL_VERSION "0.3.0"
-#define UC_CURL_VERSION_NUM 0x000300
+#define UC_CURL_VERSION "0.4.0"
+#define UC_CURL_VERSION_NUM 0x000400
 
 #include <iostream>
 #include <memory>
@@ -145,11 +145,11 @@ inline time_t getdate(const std::string& p, const time_t* unused = nullptr) noex
 }
 inline std::string escape(const std::string& str)
 {
-    return std::string(safe_ptr<char>(curl_escape(str.c_str(), static_cast<int>(str.size()))).get());
+    return std::string{safe_ptr<char>(curl_escape(str.c_str(), static_cast<int>(str.size()))).get()};
 }
 inline std::string unescape(const std::string& str)
 {
-    return std::string(safe_ptr<char>(curl_unescape(str.c_str(), static_cast<int>(str.size()))).get());
+    return std::string{safe_ptr<char>(curl_unescape(str.c_str(), static_cast<int>(str.size()))).get()};
 }
 
 //-----------------------------------------------------------------------------
@@ -711,7 +711,7 @@ public:
         return *this;
     }
 
-    // set response callback.  T : std::string, std::ostream, std::function<size_t>(const char*, size_t)
+    // set response callback.  T : std::string, std::ostream, std::function<size_t(const char*, size_t)>
     template <typename T> basic_easy& response(T& output)
     {
         return setopt(CURLOPT_WRITEDATA, &output).setopt(CURLOPT_WRITEFUNCTION, &detail::write_cb<T>);
@@ -723,7 +723,7 @@ public:
         clear<CURLOPT_WRITEFUNCTION>();
         return *this;
     }
-    // set response header callback.  T : std::string, std::ostream, std::function<size_t(const char*, size_t)
+    // set response header callback.  T : std::string, std::ostream, std::function<size_t(const char*, size_t)>
     template <typename T> basic_easy& response_header(T& output)
     {
         return setopt(CURLOPT_WRITEHEADER, &output).setopt(CURLOPT_HEADERFUNCTION, &detail::write_cb<T>);
@@ -1022,6 +1022,78 @@ using multi = basic_multi<safe_ptr<detail::multi_handle>>;
 // "uc::curl::multi_ref" does not release resources. It is for reference only.
 using multi_ref = basic_multi<detail::multi_handle*>;
 
+
+namespace detail
+{
+    //-----------------------------------------------------------------------------
+    // CURLMoption policy , setopt()
+
+    template <int OptionType> constexpr bool is_type(CURLMoption opt) noexcept {return (OptionType <= opt) && (opt < OptionType + 10000); }
+    constexpr bool is_long(CURLMoption opt) noexcept {return is_type<CURLOPTTYPE_LONG>(opt); }
+    constexpr bool is_objptr(CURLMoption opt) noexcept {return is_type<CURLOPTTYPE_OBJECTPOINT>(opt); }
+    constexpr bool is_funcptr(CURLMoption opt) noexcept {return is_type<CURLOPTTYPE_FUNCTIONPOINT>(opt); }
+    constexpr bool is_off_t(CURLMoption opt)  noexcept {return is_type<CURLOPTTYPE_OFF_T>(opt); }
+
+    // type safe setopt()
+    template <CURLMoption Option, sfinae<is_long(Option)> = nullptr>
+    CURLMcode setopt(CURLM* handle, long parameter) noexcept
+    {
+        return curl_multi_setopt(handle, Option, parameter);
+    }
+    template <CURLMoption Option, typename T, sfinae<is_objptr(Option) && std::is_pointer<decay_t<T>>::value> = nullptr>
+    CURLMcode setopt(CURLM* handle, T&& parameter) noexcept
+    {
+        return curl_multi_setopt(handle, Option, parameter);
+    }
+    template <CURLMoption Option, typename T, sfinae<is_objptr(Option) && is_same_decay<T, std::nullptr_t>::value> = nullptr>
+    CURLMcode setopt(CURLM* handle, T&&) noexcept
+    {
+        return curl_multi_setopt(handle, Option, static_cast<void*>(0));
+    }
+    template <CURLMoption Option, typename T, sfinae<is_objptr(Option) && is_same_decay<T, std::string>::value> = nullptr>
+    CURLMcode setopt(CURLM* handle, T&& str) noexcept
+    {
+        return curl_multi_setopt(handle, Option, str.c_str());
+    }
+    template <CURLMoption Option, typename T, sfinae<is_funcptr(Option) && std::is_function<typename std::remove_pointer<T>::type>::value> = nullptr>
+    CURLMcode setopt(CURLM* handle, T parameter) noexcept
+    {
+        return curl_multi_setopt(handle, Option, parameter);
+    }
+    template <CURLMoption Option, typename T, sfinae<is_funcptr(Option) && is_same_decay<T, std::nullptr_t>::value> = nullptr>
+    CURLMcode setopt(CURLM* handle, T&&) noexcept
+    {
+        return curl_multi_setopt(handle, Option, static_cast<void*>(0));
+    }
+    template <CURLMoption Option, sfinae<is_off_t(Option)> = nullptr>
+    CURLMcode setopt(CURLM* handle, curl_off_t parameter) noexcept
+    {
+        return curl_multi_setopt(handle, Option, parameter);
+    }
+
+    // type safe clear function
+    template <CURLMoption Option, sfinae<is_long(Option)> = nullptr>
+    CURLMcode clearopt(CURL* handle) noexcept
+    {
+        return curl_multi_setopt(handle, Option, 0L);
+    }
+    template <CURLMoption Option, sfinae<is_objptr(Option)> = nullptr>
+    CURLMcode clearopt(CURL* handle) noexcept
+    {
+        return curl_multi_setopt(handle, Option, static_cast<void*>(0));
+    }
+    template <CURLMoption Option, sfinae<is_funcptr(Option)> = nullptr>
+    CURLMcode clearopt(CURL* handle) noexcept
+    {
+        return curl_multi_setopt(handle, Option, static_cast<void*>(0));
+    }
+    template <CURLMoption Option, sfinae<is_off_t(Option)> = nullptr>
+    CURLMcode clearopt(CURL* handle) noexcept
+    {
+        return curl_multi_setopt(handle, Option, static_cast<curl_off_t>(0));
+    }
+}
+
 template <typename Handle> class basic_multi
 {
 public:
@@ -1048,9 +1120,41 @@ public:
         return &(*handle);
     }
 
-    template <typename T> basic_multi& setopt(CURLMoption option, T args)
+    //! @param func void (uc::curl::multi_ref multi, long timeout_ms)
+    template <typename F> basic_multi& on_timer(F& func)
     {
-        UC_CURL_ASSERT_CURLMCODE(curl_multi_setopt(native_handle(), option, args));
+        return setopt(CURLMOPT_TIMERDATA, &func).setopt(CURLMOPT_TIMERFUNCTION, &basic_multi::timer_cb<F>);
+    }
+    //! @param func void (uc::curl::easy_ref easy, curl_socket_t sockfd, int action, T* sockptr)
+    template <typename T, typename F> basic_multi& on_socket(F& func)
+    {
+        return setopt(CURLMOPT_SOCKETDATA, &func).setopt(CURLMOPT_SOCKETFUNCTION, &basic_multi::socket_cb<T, F>);
+    }
+    //! @param func int (uc::curl::easy_ref parent, uc::curl::easy_ref easy, size_t num_headers, curl_pushheaders *headers)
+    template <typename T, typename F> basic_multi& on_push(F& func)
+    {
+        return setopt(CURLMOPT_PUSHDATA, &func).setopt(CURLMOPT_PUSHFUNCTION, &basic_multi::push_cb<F>);
+    }
+
+
+    template <CURLMoption Option> basic_multi& setopt()
+    {
+        UC_CURL_ASSERT_CURLMCODE(detail::setopt<Option>(native_handle(), 1L));
+        return *this;
+    }
+    template <CURLMoption Option> basic_multi& clear()
+    {
+        UC_CURL_ASSERT_CURLMCODE(detail::clearopt<Option>(native_handle()));
+        return *this;
+    }
+    template <CURLMoption Option, typename T> basic_multi& setopt(T&& parameter)
+    {
+        UC_CURL_ASSERT_CURLMCODE(detail::setopt<Option>(native_handle(), std::forward<T>(parameter)));
+        return *this;
+    }
+    template <typename T> basic_multi& setopt(CURLMoption option, const T& parameter)
+    {
+       UC_CURL_ASSERT_CURLMCODE(curl_multi_setopt(native_handle(), option, parameter));
         return *this;
     }
 
@@ -1065,16 +1169,21 @@ public:
         return *this;
     }
 
-    void assign(curl_socket_t sockfd, void* sockptr)
+    basic_multi& assign(curl_socket_t sockfd, void* sockptr)
     {
         UC_CURL_ASSERT_CURLMCODE(curl_multi_assign(native_handle(), sockfd, sockptr));
+        return *this;
     }
     // curl_multi_socket() and curl_multi_socket_all() are deprecated.
     int socket_action(curl_socket_t sockfd, int ev_bitmask)
     {
-        int running_handles;
+        int running_handles{};
         UC_CURL_ASSERT_CURLMCODE(curl_multi_socket_action(native_handle(), sockfd, ev_bitmask, &running_handles));
         return running_handles;
+    }
+    int socket_action_timeout()
+    {
+        return socket_action(CURL_SOCKET_TIMEOUT, 0);
     }
 
     int perform()
@@ -1145,21 +1254,21 @@ public:
         return numfds;
     }
 
-    // func : void (easy_ref&&, CURLMSG, CURLcode)
+    //! @param func void (easy_ref, CURLMSG, CURLcode)
     template <typename F> void for_each_info(F func)
     {
         int msgs_in_queue = 0;
         for (auto msg = info_read(&msgs_in_queue); msg; msg = info_read(&msgs_in_queue)) {
-            func(easy_ref(msg->easy_handle), msg->msg, msg->data.result);
+            func(easy_ref{msg->easy_handle}, msg->msg, msg->data.result);
         }
     }
-    // func : void (easy_ref&&, CURLcode)
+    //! @param func void (easy_ref, CURLcode)
     template <typename F> void for_each_done_info(F func)
     {
         int msgs_in_queue = 0;
         for (auto msg = info_read(&msgs_in_queue); msg; msg = info_read(&msgs_in_queue)) {
             if (msg->msg == CURLMSG_DONE) {
-                func(easy_ref(msg->easy_handle), msg->data.result);
+                func(easy_ref{msg->easy_handle}, msg->data.result);
             }
         }
     }
@@ -1173,6 +1282,27 @@ public:
         return curl_multi_info_read(native_handle(), msgs_in_queue);
     }
 private:
+    template <typename F> static int timer_cb(CURLM *multi, long timeout_ms, void *userp)
+    {
+        try {
+            (*static_cast<F*>(userp))(multi_ref{multi}, timeout_ms);
+        } catch (...) {}
+        return 0;
+    }
+    template <typename T, typename F> static int socket_cb(CURL *easy, curl_socket_t s, int action, void *userp, void *socketp) noexcept
+    {
+        try {
+            (*static_cast<F*>(userp))(easy_ref{easy}, s, action, static_cast<T*>(socketp));
+        } catch (...) {}
+        return 0;
+    }
+    template <typename F> static int push_cb(CURL *parent, CURL *easy, size_t num_headers, curl_pushheaders *headers, void *userp) noexcept
+    {
+        try {
+            return (*static_cast<F*>(userp))(easy_ref{parent}, easy_ref{easy}, num_headers, headers);
+        } catch (...) {}
+        return CURL_PUSH_DENY;
+    }
     handle_type handle;
 };
 template<> inline multi::basic_multi() : handle{static_cast<detail::multi_handle*>(curl_multi_init())}

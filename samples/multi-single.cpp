@@ -11,7 +11,6 @@ http://opensource.org/licenses/mit-license.php
 #include <iostream>
 #include <stdexcept>
 #include <chrono>
-#include <thread>
 #include "../uccurl.h"
 
 int main()

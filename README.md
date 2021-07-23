@@ -222,7 +222,6 @@ get sample
 #include <iostream>
 #include <stdexcept>
 #include <chrono>
-#include <thread>
 #include "uccurl.h"
 
 int main()
