@@ -8,8 +8,8 @@ http://opensource.org/licenses/mit-license.php
 */
 #ifndef UC_CURL_H
 #define UC_CURL_H
-#define UC_CURL_VERSION "0.4.0"
-#define UC_CURL_VERSION_NUM 0x000400
+#define UC_CURL_VERSION "0.5.0"
+#define UC_CURL_VERSION_NUM 0x000500
 
 #include <iostream>
 #include <memory>
@@ -65,6 +65,7 @@ namespace detail
 #endif
 }
 template <typename T> using safe_ptr = std::unique_ptr<T, detail::deleter<T>>;
+template <typename Handle> class basic_easy;
 
 //-----------------------------------------------------------------------------
 // error , exception
@@ -238,6 +239,9 @@ namespace detail
 class share
 {
 public:
+    using handle_type = safe_ptr<detail::share_handle>;
+    using pointer = CURLSH*;
+
     template <typename Mutex> static void lock(CURL*, curl_lock_data, curl_lock_access, void *userp)
     {
         static_cast<Mutex*>(userp)->lock();
@@ -256,14 +260,10 @@ public:
     share& operator=(const share&) = delete;
     share& operator=(share&& obj) noexcept = default;
     ~share() noexcept = default;
-    void swap(share& obj) noexcept
-    {
-        handle.swap(obj.handle);
-    }
-    CURLSH* native_handle() const noexcept
-    {
-        return handle.get();
-    }
+
+    explicit operator bool() const noexcept { return static_cast<bool>(handle); }
+    pointer native_handle() const noexcept { return handle.get(); }
+    void swap(share& obj) noexcept { handle.swap(obj.handle); }
 
     share& set(curl_lock_data data)
     {
@@ -285,7 +285,7 @@ public:
         return *this;
     }
 private:
-    safe_ptr<detail::share_handle> handle;
+    handle_type handle;
 };
 inline void swap(share& a, share& b) noexcept
 {
@@ -330,7 +330,7 @@ class slist_iterator : public std::iterator<std::input_iterator_tag, char*, void
 public:
     typedef char* value_type;
 
-    explicit slist_iterator(curl_slist* p) : ptr(p)
+    explicit slist_iterator(const curl_slist* p = nullptr) : ptr{p}
     {
     }
     const value_type& operator *() const noexcept
@@ -357,15 +357,15 @@ public:
         return !operator==(a, b);
     }
 private:
-    curl_slist* ptr;
+    const curl_slist* ptr{};
 };
 namespace detail
 {
-    inline slist_iterator begin(slist& l)
+    inline slist_iterator begin(const slist& l)
     {
         return slist_iterator(l.get());
     }
-    inline slist_iterator end(slist& l)
+    inline slist_iterator end(const slist& l)
     {
         return slist_iterator(nullptr);
     }
@@ -377,6 +377,9 @@ namespace detail
 class form
 {
 public:
+    using handle_type = safe_ptr<curl_httppost>;
+    using pointer = typename handle_type::pointer;
+
     form() = default;
     form(const form&) = delete;
     form(form&& obj) noexcept = default;
@@ -384,14 +387,10 @@ public:
     form& operator=(const form&) = delete;
     form& operator=(form&& obj) noexcept = default;
 
-    curl_httppost* native_handle() noexcept
-    {
-        return first.get();
-    }
-    const curl_httppost* native_handle() const noexcept
-    {
-        return first.get();
-    }
+    explicit operator bool() const noexcept { return static_cast<bool>(first); }
+    pointer native_handle() const noexcept { return first.get(); }
+
+
     form& forms(const std::string& name, const curl_forms* list)
     {
         return add(name, CURLFORM_ARRAY, list);
@@ -488,6 +487,122 @@ private:
     curl_httppost* last = nullptr;
 };
 
+#if LIBCURL_VERSION_NUM >= 0x073800
+//-----------------------------------------------------------------------------
+// mime API
+
+namespace detail
+{
+    template <> struct traits<curl_mime>   { static constexpr decltype(&curl_mime_free) cleanup = curl_mime_free; };
+}
+
+class mime_part;
+
+class mime
+{
+    friend class mime_part;
+public:
+    using handle_type = safe_ptr<curl_mime>;
+    using pointer = typename handle_type::pointer;
+
+    mime() = default;
+    mime(CURL* easy) noexcept : handle{curl_mime_init(easy)} {}
+    template<typename T> mime(basic_easy<T>& easy) noexcept;
+
+    explicit operator bool() const noexcept { return static_cast<bool>(handle); }
+    pointer native_handle() const noexcept { return &(*handle); }
+    void swap(mime& obj) { std::swap(handle, obj.handle); }
+
+    mime_part addpart();
+private:
+    handle_type handle{};
+};
+
+class mime_part
+{
+public:
+    mime_part() = default;
+    mime_part(curl_mimepart* p) : handle{p} {}
+
+    explicit operator bool() const noexcept { return static_cast<bool>(handle); }
+    curl_mimepart* native_handle() const noexcept { return handle; }
+
+    mime_part& name(const std::string& value) { return name(value.c_str()); }
+    mime_part& name(const char* value)
+    {
+        UC_CURL_ASSERT_CURLCODE(curl_mime_name(handle, value));
+        return *this;
+    }
+
+    mime_part& filename(const std::string& value) { return filename(value.c_str()); }
+    mime_part& filename(const char* value)
+    {
+        UC_CURL_ASSERT_CURLCODE(curl_mime_filename(handle, value));
+        return *this;
+    }
+
+    mime_part& type(const std::string& value) { return type(value.c_str()); }
+    mime_part& type(const char* value)
+    {
+        UC_CURL_ASSERT_CURLCODE(curl_mime_type(handle, value));
+        return *this;
+    }
+
+    mime_part& encoder(const std::string& value) { return encoder(value.c_str()); }
+    mime_part& encoder(const char* value)
+    {
+        UC_CURL_ASSERT_CURLCODE(curl_mime_encoder(handle, value));
+        return *this;
+    }
+
+    mime_part& filedata(const std::string& filename) { return filedata(filename.c_str()); }
+    mime_part& filedata(const char* filename)
+    {
+        UC_CURL_ASSERT_CURLCODE(curl_mime_filedata(handle, filename));
+        return *this;
+    }
+
+    mime_part& data(const std::string& str) { return data(str.c_str(), str.size()); }
+    mime_part& data(const char* data, size_t size = CURL_ZERO_TERMINATED)
+    {
+        UC_CURL_ASSERT_CURLCODE(curl_mime_data(handle, data, size));
+        return *this;
+    }
+
+    mime_part& data(std::istream& is)
+    {
+        const auto nbytes = static_cast<curl_off_t>(is.seekg(0, is.end).tellg());
+        return data(is.seekg(0, is.beg), nbytes);
+    }
+    mime_part& data(std::istream& is, curl_off_t nbytes)
+    {
+        UC_CURL_ASSERT_CURLCODE(curl_mime_data_cb(handle, nbytes, &detail::read_cb<std::istream>, &detail::seek_cb<std::istream>, nullptr, &is));
+        return *this;
+    }
+    mime_part& subparts(mime&& subparts)
+    {
+        UC_CURL_ASSERT_CURLCODE(curl_mime_subparts(handle, subparts.native_handle()));
+        subparts.handle.release();
+        return *this;
+    }
+    mime_part& headers(const curl_slist* header_list, int take_ownership)
+    {
+        UC_CURL_ASSERT_CURLCODE(curl_mime_headers(handle, const_cast<curl_slist*>(header_list), take_ownership));
+        return *this;
+    }
+    mime_part& headers(const slist& header_list) { return headers(header_list.get(), 0); }
+    mime_part& headers(slist&& header_list) { return headers(header_list.release(), 1); }
+
+private:
+    curl_mimepart* handle{};
+};
+
+inline mime_part mime::addpart()
+{
+    return mime_part{curl_mime_addpart(handle.get())};
+}
+#endif
+
 namespace detail
 {
     //-----------------------------------------------------------------------------
@@ -500,6 +615,9 @@ namespace detail
     template <> struct infogroup<CURLINFO_SLIST>  {using type = curl_slist*;};
 #if LIBCURL_VERSION_NUM >= 0x072d00
     template <> struct infogroup<CURLINFO_SOCKET> {using type = curl_socket_t;};
+#endif
+#if LIBCURL_VERSION_NUM >= 0x073700
+    template <> struct infogroup<CURLINFO_OFF_T>  {using type = curl_off_t;};
 #endif
 
     template < CURLINFO Info > struct info        {using type = typename infogroup<Info & CURLINFO_TYPEMASK>::type;};
@@ -553,7 +671,7 @@ namespace detail
     template <CURLoption Option, typename T, sfinae<is_objptr(Option)> = nullptr, sfinae<is_same_decay<T, share>::value> = nullptr>
     CURLcode setopt(CURL* handle, const T& share)
     {
-        return curl_easy_setopt(handle, Option, share.get());
+        return curl_easy_setopt(handle, Option, share.native_handle());
     }
     template <CURLoption Option, typename T, sfinae<is_objptr(Option)> = nullptr, sfinae<is_same_decay<T, slist>::value> = nullptr>
     CURLcode setopt(CURL* handle, const T& slist)
@@ -565,6 +683,13 @@ namespace detail
     {
         return curl_easy_setopt(handle, Option, form.native_handle());
     }
+#if LIBCURL_VERSION_NUM >= 0x073800
+    template <CURLoption Option, typename T, sfinae<is_objptr(Option)> = nullptr, sfinae<is_same_decay<T, mime>::value> = nullptr>
+    CURLcode setopt(CURL* handle, const T& mime)
+    {
+        return curl_easy_setopt(handle, Option, mime.native_handle());
+    }
+#endif
     template <CURLoption Option, typename T, sfinae<is_funcptr(Option)> = nullptr, sfinae<std::is_function<typename std::remove_pointer<T>::type>::value> = nullptr>
     CURLcode setopt(CURL* handle, T parameter) noexcept
     {
@@ -621,6 +746,7 @@ template <typename Handle> class basic_easy
 public:
     static constexpr size_t DEFAULT_MAX_REDIRECTS = 20;
     using handle_type = Handle;
+    using pointer = CURL*;
 
     // easy only.
     basic_easy();
@@ -634,17 +760,12 @@ public:
     ~basic_easy() noexcept = default;
     basic_easy(basic_easy&& obj) noexcept = default;
     basic_easy& operator=(basic_easy&& obj) noexcept = default;
-
     basic_easy(const basic_easy& obj);
     basic_easy& operator=(const basic_easy& obj);
-    void swap(basic_easy& obj) noexcept
-    {
-        handle.swap(obj.handle);
-    }
-    CURL* native_handle() const noexcept
-    {
-        return &(*handle);
-    }
+
+    explicit operator bool() const noexcept { return static_cast<bool>(handle); }
+    pointer native_handle() const noexcept { return &(*handle); }
+    void swap(basic_easy& obj) noexcept { handle.swap(obj.handle); }
 
     const char* uri() const
     {
@@ -910,10 +1031,6 @@ template <typename T> void swap(basic_easy<T>& a, basic_easy<T>& b) noexcept
     a.swap(b);
 }
 
-
-
-
-
 template <typename T, typename H> void operator>>(basic_easy<H>& handle, T&& obj)
 {
     handle.response(obj);
@@ -931,6 +1048,10 @@ template <typename T, typename H> void operator>>(basic_easy<H>&& handle, T&& ob
     h.response(obj);
     h.perform();
 }
+
+#if LIBCURL_VERSION_NUM >= 0x073800
+template<typename T> mime::mime(basic_easy<T>& easy) noexcept : mime(easy.native_handle()) {}
+#endif
 
 //-----------------------------------------------------------------------------
 // time utilities
@@ -1098,6 +1219,7 @@ template <typename Handle> class basic_multi
 {
 public:
     using handle_type = Handle;
+    using pointer = CURLM*;
 
     // multi only
     basic_multi();
@@ -1111,14 +1233,10 @@ public:
     basic_multi(basic_multi&& obj) noexcept = default;
     basic_multi& operator=(const basic_multi&) = delete;
     basic_multi& operator=(basic_multi&& obj) noexcept = default;
-    void swap(basic_multi& obj)
-    {
-        handle.swap(obj.handle);
-    }
-    CURLM* native_handle() const noexcept
-    {
-        return &(*handle);
-    }
+
+    explicit operator bool() const noexcept { return static_cast<bool>(handle); }
+    pointer native_handle() const noexcept { return handle.get(); }
+    void swap(basic_multi& obj) { handle.swap(obj.handle); }
 
     //! @param func void (uc::curl::multi_ref multi, long timeout_ms)
     template <typename F> basic_multi& on_timer(F& func)

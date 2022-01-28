@@ -93,7 +93,7 @@ There are several ways.
 
 Automatically resolve type.
 ```cpp
-    const char* url = curl.url();  // getinfo<CURLINFO_EFFECTIVE_URL>();
+    const char* url = curl.uri();  // getinfo<CURLINFO_EFFECTIVE_URL>();
 
     const char* type = curl.getinfo<CURLINFO_CONTENT_TYPE>();
     long code = curl.getinfo<CURLINFO_RESPONSE_CODE>();
