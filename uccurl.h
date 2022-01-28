@@ -330,7 +330,7 @@ class slist_iterator : public std::iterator<std::input_iterator_tag, char*, void
 public:
     typedef char* value_type;
 
-    explicit slist_iterator(curl_slist* p) : ptr(p)
+    explicit slist_iterator(const curl_slist* p = nullptr) : ptr{p}
     {
     }
     const value_type& operator *() const noexcept
@@ -357,15 +357,15 @@ public:
         return !operator==(a, b);
     }
 private:
-    curl_slist* ptr;
+    const curl_slist* ptr{};
 };
 namespace detail
 {
-    inline slist_iterator begin(slist& l)
+    inline slist_iterator begin(const slist& l)
     {
         return slist_iterator(l.get());
     }
-    inline slist_iterator end(slist& l)
+    inline slist_iterator end(const slist& l)
     {
         return slist_iterator(nullptr);
     }
@@ -615,6 +615,9 @@ namespace detail
     template <> struct infogroup<CURLINFO_SLIST>  {using type = curl_slist*;};
 #if LIBCURL_VERSION_NUM >= 0x072d00
     template <> struct infogroup<CURLINFO_SOCKET> {using type = curl_socket_t;};
+#endif
+#if LIBCURL_VERSION_NUM >= 0x073700
+    template <> struct infogroup<CURLINFO_OFF_T>  {using type = curl_off_t;};
 #endif
 
     template < CURLINFO Info > struct info        {using type = typename infogroup<Info & CURLINFO_TYPEMASK>::type;};
